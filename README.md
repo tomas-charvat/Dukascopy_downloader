@@ -195,7 +195,9 @@ and tick bid/ask); volumes are plain. A period that hasn't closed yet returns
 `400 From time is too late`.
 </details>
 
-## Disclaimer
+## License
+
+[MIT](LICENSE) — free to use, modify and share.
 
 This project is not affiliated with Dukascopy Bank SA. Data is provided by Dukascopy
 under their terms of use; please use it responsibly.

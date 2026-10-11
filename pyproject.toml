@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,6 +8,8 @@ version = "1.1.0"
 description = "Download Dukascopy historical market data (ticks, 1-minute, hourly and daily candles) into Parquet files"
 readme = "README.md"
 requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Tomas Charvat" }]
 keywords = ["dukascopy", "forex", "historical data", "market data", "ohlc", "tick data", "backtesting", "parquet"]
 classifiers = [
