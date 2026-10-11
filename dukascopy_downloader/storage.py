@@ -5,25 +5,37 @@ Layout (all times UTC)::
     data/
       _meta/instruments.json, instruments/<CODE>.json, store.json
       _logs/duka.log
-      m1/EUR-USD/BID/2024-01.parquet       (one file per month)
-      m1/EUR-USD/BID/_manifest.json        (API chunks downloaded & final)
-      h1/EUR-USD/BID/2024.parquet          (one file per year)
-      d1/EUR-USD/BID/all.parquet           (single file)
-      tick/EUR-USD/2024-01-02.parquet      (one file per day, bid+ask)
+      <tf>/<category path>/<CODE>/...      category path = readable group names, e.g. Forex/Majors
+      m1/Forex/Majors/EUR-USD/BID/2024-01.parquet     (one file per month)
+      m1/Forex/Majors/EUR-USD/BID/_manifest.json      (API chunks downloaded & final)
+      h1/Forex/Majors/EUR-USD/BID/2024.parquet        (one file per year)
+      d1/Forex/Majors/EUR-USD/BID/all.parquet         (single file)
+      tick/Forex/Majors/EUR-USD/2024-01-02.parquet    (one file per day, bid+ask)
+
+Series are found by scanning ``<tf>/``, so readers need no category info. A store with
+``category_of`` set (the Downloader) moves series found elsewhere (e.g. the old flat
+``<tf>/<CODE>`` layout) into their category folder on first access.
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
+import re
+import shutil
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, Iterator, List, Optional
 
 import pandas as pd
 
 from .decode import empty_candles, empty_ticks
 from .timeframes import parse_date, part_range, to_utc, utcnow
+
+log = logging.getLogger(__name__)
+TIMEFRAMES = ("tick", "m1", "h1", "d1")
+SIDES = ("BID", "ASK")
 
 
 def parquet_available() -> bool:
@@ -52,8 +64,11 @@ def _atomic_replace(tmp: Path, dst: Path) -> None:
 class Store:
     FORMATS = {"parquet": ".parquet", "csv": ".csv.gz"}
 
-    def __init__(self, root: os.PathLike, fmt: Optional[str] = None):
+    def __init__(self, root: os.PathLike, fmt: Optional[str] = None,
+                 category_of: Optional[Callable[[str], str]] = None):
         self.root = Path(root)
+        self.category_of = category_of  # code -> "Forex/Majors"; None = read-only lookup
+        self._code_dirs: Dict[tuple, Path] = {}
         self.meta_dir = self.root / "_meta"
         cfg_path = self.meta_dir / "store.json"
         cfg = {}
@@ -75,8 +90,67 @@ class Store:
             cfg_path.write_text(json.dumps({"format": fmt}), encoding="utf-8")
 
     # ------------------------------------------------------------------ paths
+    def _is_code_dir(self, tf: str, d: Path) -> bool:
+        if tf == "tick":
+            return (d / "_manifest.json").exists() or any(
+                p.is_file() and (p.name.endswith(".parquet") or p.name.endswith(".csv.gz")) for p in d.iterdir())
+        return any((d / s).is_dir() for s in SIDES)
+
+    def _iter_code_dirs(self, tf: str) -> Iterator[Path]:
+        """All series folders under ``<tf>/`` at any category depth."""
+        base = self.root / tf
+        if not base.is_dir():
+            return
+        stack = [base]
+        while stack:
+            d = stack.pop()
+            for c in sorted(d.iterdir(), reverse=True):
+                if not c.is_dir() or c.name.startswith("_"):
+                    continue
+                if self._is_code_dir(tf, c):
+                    yield c
+                else:
+                    stack.append(c)
+
+    def _category_dir(self, tf: str, code: str) -> Path:
+        try:
+            cat = self.category_of(code) or ""
+        except Exception as e:  # noqa: BLE001 - unknown code / offline catalogue
+            log.warning("no category for %s (%s), using Other", code, e)
+            cat = ""
+        parts = [re.sub(r"[^A-Za-z0-9._-]+", "_", x).strip("_") for x in cat.split("/")]
+        parts = [x for x in parts if x] or ["Other"]
+        return self.root.joinpath(tf, *parts)
+
+    def code_dir(self, tf: str, code: str) -> Path:
+        key = (tf, code)
+        if key in self._code_dirs:
+            return self._code_dirs[key]
+        found = next((d for d in self._iter_code_dirs(tf) if d.name == code), None)
+        if self.category_of is None:
+            if found is None:  # nothing stored; don't cache so a later write is picked up
+                return self.root / tf / code
+            self._code_dirs[key] = found
+            return found
+        want = self._category_dir(tf, code) / code
+        if found is not None and found != want and not want.exists():
+            want.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(found), str(want))
+            log.info("moved %s -> %s", found, want)
+            parent = found.parent
+            while parent != self.root / tf and parent.is_dir() and not any(parent.iterdir()):
+                parent.rmdir()
+                parent = parent.parent
+        self._code_dirs[key] = want
+        return want
+
+    def category(self, tf: str, code: str) -> str:
+        d = self.code_dir(tf, code)
+        rel = d.parent.relative_to(self.root / tf)
+        return rel.as_posix() if str(rel) != "." else ""
+
     def series_dir(self, tf: str, code: str, side: Optional[str]) -> Path:
-        d = self.root / tf / code
+        d = self.code_dir(tf, code)
         return d if tf == "tick" else d / (side or "BID").upper()
 
     def part_path(self, tf: str, code: str, side: Optional[str], part: str) -> Path:
@@ -199,21 +273,19 @@ class Store:
         out = []
         if not self.root.exists():
             return out
-        for tf_dir in sorted(self.root.iterdir()):
-            tf = tf_dir.name
-            if tf not in ("tick", "m1", "h1", "d1") or not tf_dir.is_dir():
-                continue
-            for code_dir in sorted(tf_dir.iterdir()):
-                if not code_dir.is_dir():
-                    continue
-                sides = [None] if tf == "tick" else sorted(d.name for d in code_dir.iterdir() if d.is_dir())
+        for tf in TIMEFRAMES:
+            for code_dir in self._iter_code_dirs(tf):
+                cat = code_dir.parent.relative_to(self.root / tf).as_posix()
+                cat = "" if cat == "." else cat
+                sides = [None] if tf == "tick" else [s for s in SIDES if (code_dir / s).is_dir()]
                 for side in sides:
-                    out.append({"tf": tf, "code": code_dir.name, "side": side})
-        return out
+                    out.append({"tf": tf, "category": cat, "code": code_dir.name, "side": side})
+        return sorted(out, key=lambda x: (TIMEFRAMES.index(x["tf"]), x["category"], x["code"], x["side"] or ""))
 
     def series_summary(self, tf: str, code: str, side: Optional[str]) -> Dict:
         parts = self.list_parts(tf, code, side)
-        info = {"tf": tf, "code": code, "side": side or "-", "files": len(parts),
+        info = {"tf": tf, "category": self.category(tf, code), "code": code, "side": side or "-",
+                "files": len(parts),
                 "rows": 0, "first": None, "last": None,
                 "size_mb": round(sum(p.stat().st_size for p in parts) / 1e6, 2)}
         if not parts:

@@ -153,12 +153,12 @@ def cmd_status(a) -> int:
     if not series:
         print(f"No data in {Path(a.data_dir).resolve()}")
         return 0
-    print(f"{'tf':<5}{'symbol':<20}{'side':<6}{'files':>6}{'rows':>12}{'MB':>9}  first -> last (UTC)")
+    print(f"{'tf':<5}{'category':<20}{'symbol':<20}{'side':<6}{'files':>6}{'rows':>12}{'MB':>9}  first -> last (UTC)")
     for s in series:
         i = st.series_summary(s["tf"], s["code"], s["side"])
         f = f"{i['first']:%Y-%m-%d %H:%M}" if i["first"] is not None else "-"
         l = f"{i['last']:%Y-%m-%d %H:%M}" if i["last"] is not None else "-"
-        print(f"{i['tf']:<5}{i['code']:<20}{i['side']:<6}{i['files']:>6}{i['rows']:>12}{i['size_mb']:>9}  {f} -> {l}")
+        print(f"{i['tf']:<5}{i['category']:<20}{i['code']:<20}{i['side']:<6}{i['files']:>6}{i['rows']:>12}{i['size_mb']:>9}  {f} -> {l}")
     return 0
 
 

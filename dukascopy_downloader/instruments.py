@@ -27,6 +27,18 @@ CATEGORIES = [
     ("VCCY", "Crypto"),
 ]
 
+# Folder names for the top-level API groups (subgroups use their API description,
+# e.g. "Majors", "Energy", "Asia / Pacific", "Germany")
+FOLDER_NAMES = {
+    "FX": "Forex",
+    "CMD": "Commodities",
+    "IDX": "Indices",
+    "BND_CFD": "Bonds",
+    "STCK_CFD": "Stocks",
+    "ETF_CFD": "ETF",
+    "VCCY": "Crypto",
+}
+
 
 def _norm(s: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", str(s).upper())
@@ -101,6 +113,23 @@ class Instruments:
         if cands:
             raise KeyError(f"Symbol '{symbol}' is ambiguous: {', '.join(cands[:15])}")
         raise KeyError(f"Unknown symbol '{symbol}'. Try: duka instruments --search {symbol}")
+
+    def category_path(self, code: str) -> str:
+        """Readable group path of an instrument, top-level first, e.g. 'Forex/Majors' or 'Stocks/US'."""
+        inst = next((i for i in self.all if i["code"] == code), None)
+        if inst is None:
+            raise KeyError(f"Unknown instrument '{code}'")
+        by_id = {g["id"]: g for g in self.groups}
+        path, gid, seen = [], inst.get("groupId"), set()
+        while gid in by_id and gid not in seen:
+            seen.add(gid)
+            g = by_id[gid]
+            name = FOLDER_NAMES.get(g["code"]) or re.sub(r"\s+CFD$", "", str(g.get("description") or "").strip())
+            path.append(name or str(g["code"]))
+            gid = by_id[gid].get("parentId")
+        if not path:
+            path = ["Other"]
+        return "/".join(reversed(path))
 
     def _group_ids(self, group: str) -> set:
         g = str(group).upper()

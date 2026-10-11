@@ -5,7 +5,7 @@ import logging
 import sys
 import threading
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -73,31 +73,80 @@ class SeriesResult:
         return s
 
 
+class _RateWindow:
+    """Requests per second averaged over the last ``window`` seconds (shared across series)."""
+
+    def __init__(self, window: float = 600.0):
+        self.window = window
+        self.n = 0
+        self._samples: deque = deque()  # (monotonic time, cumulative count)
+        self._lock = threading.Lock()
+
+    def add(self, k: int = 1) -> None:
+        now = time.monotonic()
+        with self._lock:
+            self.n += k
+            if self._samples and now - self._samples[-1][0] < 1.0:
+                self._samples[-1] = (self._samples[-1][0], self.n)  # at most one sample per second
+            else:
+                self._samples.append((now, self.n))
+            while len(self._samples) > 2 and self._samples[1][0] <= now - self.window:
+                self._samples.popleft()
+
+    def rate(self) -> Optional[float]:
+        with self._lock:
+            if len(self._samples) < 2:
+                return None
+            (t0, n0), (t1, n1) = self._samples[0], self._samples[-1]
+        return (n1 - n0) / (t1 - t0) if t1 - t0 >= 5.0 and n1 > n0 else None  # too noisy before 5 s
+
+
+def _fmt_eta(seconds: float) -> str:
+    m, s = divmod(int(round(seconds)), 60)
+    h, m = divmod(m, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+
+
 class _Progress:
-    def __init__(self, total: int, desc: str, enabled: bool):
+    """Progress bar whose ETA uses the request rate of the last 10 minutes, so it doesn't jump."""
+
+    def __init__(self, total: int, desc: str, enabled: bool, rate: Optional[_RateWindow] = None):
         self.total, self.desc, self.n = total, desc, 0
+        self.rate = rate or _RateWindow()
         self._bar = None
         self._last = 0.0
         self.enabled = enabled and total > 0 and sys.stderr.isatty()
         if self.enabled:
             try:
                 from tqdm import tqdm
-                self._bar = tqdm(total=total, desc=desc, unit="req", leave=False, dynamic_ncols=True)
+                self._bar = tqdm(total=total, desc=desc, unit="req", leave=False, dynamic_ncols=True,
+                                 bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} "
+                                            "[{elapsed}{postfix}]")  # tqdm prefixes postfix with ", "
+                self._bar.set_postfix_str(self._eta(), refresh=False)
             except ImportError:
                 self._bar = None
 
+    def _eta(self) -> str:
+        r = self.rate.rate()
+        return f"ETA {_fmt_eta((self.total - self.n) / r)}, {r:.1f} req/s" if r else "ETA ?"
+
     def update(self, k: int = 1) -> None:
         self.n += k
+        self.rate.add(k)
         if not self.enabled:
             return
+        now = time.monotonic()
+        refresh = now - self._last > 1.0 or self.n == self.total
+        if refresh:
+            self._last = now
         if self._bar is not None:
+            if refresh:
+                self._bar.set_postfix_str(self._eta(), refresh=False)
             self._bar.update(k)
             return
-        now = time.monotonic()
-        if now - self._last > 1.0 or self.n == self.total:
-            self._last = now
+        if refresh:
             pct = 100.0 * self.n / self.total
-            sys.stderr.write(f"\r  {self.desc}: {self.n}/{self.total} ({pct:5.1f}%)")
+            sys.stderr.write(f"\r  {self.desc}: {self.n}/{self.total} ({pct:5.1f}%)  {self._eta()}   ")
             sys.stderr.flush()
 
     def close(self) -> None:
@@ -106,7 +155,7 @@ class _Progress:
         if self._bar is not None:
             self._bar.close()
         else:
-            sys.stderr.write("\r" + " " * 80 + "\r")
+            sys.stderr.write("\r" + " " * 100 + "\r")
             sys.stderr.flush()
 
 
@@ -126,8 +175,10 @@ class Downloader:
         self.client = client or DukascopyClient(rate_limit=rate_limit, max_retries=max_retries,
                                                 pool_size=max(16, self.workers * 2))
         self.instruments = Instruments(self.client, self.store.meta_dir)
+        self.store.category_of = self.instruments.category_path
         self.settle = timedelta(minutes=settle_minutes)
         self.progress = progress
+        self._rate = _RateWindow()  # request rate over the last 10 min, for the ETA
         self._stop = threading.Event()
         self.now = utcnow  # injectable clock (tests)
 
@@ -203,7 +254,7 @@ class Downloader:
         complete = set(done)
         settle_limit = now - self.settle
         desc = f"{code} {tf} {side or ''}".strip()
-        prog = _Progress(len(todo), desc, self.progress)
+        prog = _Progress(len(todo), desc, self.progress, self._rate)
 
         self._stop.clear()
         ex = ThreadPoolExecutor(max_workers=self.workers)

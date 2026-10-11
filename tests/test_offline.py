@@ -1,9 +1,11 @@
 """Offline unit tests (no network).  Run:  python -m unittest discover -s tests -v"""
 import os
+import shutil
 import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -178,6 +180,34 @@ class TestDownloader(unittest.TestCase):
         self.assertTrue((mid["spread"] > 0).all())
         both = load(self.tmp.name, "EUR-USD", "m1", side="BOTH")
         self.assertIn("close_ask", both.columns)
+
+    def test_category_folders(self):
+        self.dl.download_series("EUR-USD", "m1", "2024-03-04", "2024-03-05", "BID")
+        self.dl.download_series("XAU-USD", "h1", "2024-03-04", "2024-03-05", "BID")
+        root = Path(self.tmp.name)
+        self.assertTrue((root / "m1/Forex/Majors/EUR-USD/BID/2024-03.parquet").exists())
+        self.assertTrue((root / "h1/Forex/Metals/XAU-USD/BID/2024.parquet").exists())
+        self.assertEqual([(s["tf"], s["category"], s["code"]) for s in self.dl.store.list_series()],
+                         [("m1", "Forex/Majors", "EUR-USD"), ("h1", "Forex/Metals", "XAU-USD")])
+        # readers without category info find the series by scanning
+        self.assertEqual(len(load(self.tmp.name, "EUR-USD", "m1")), 2 * 1440)
+
+    def test_old_layouts_are_moved(self):
+        root = Path(self.tmp.name)
+        self.dl.download_series("EUR-USD", "m1", "2024-03-04", "2024-03-05", "BID")
+        for old in ("m1/EUR-USD", "m1/FX/FX_MAJORS/EUR-USD"):  # flat layout, group-code folders
+            with self.subTest(old=old):
+                (root / old).parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(root / "m1/Forex/Majors/EUR-USD"), str(root / old))
+                shutil.rmtree(root / "m1/Forex")
+                dl = Downloader(self.tmp.name, workers=4, client=self.fake, progress=False)
+                dl.now = lambda: self.NOW
+                self.assertEqual(len(dl.store.read("m1", "EUR-USD", "BID")), 2 * 1440)
+                self.assertEqual(sorted(p.name for p in (root / "m1").iterdir()), ["Forex"])
+                self.assertTrue((root / "m1/Forex/Majors/EUR-USD/BID/_manifest.json").exists())
+                self.fake.paths.clear()
+                dl.download_series("EUR-USD", "m1", "2024-03-04", "2024-03-05", "BID")
+                self.assertEqual(self.fake.paths, [])  # resume state moved along with the data
 
     def test_symbols_and_groups(self):
         inst = self.dl.instruments

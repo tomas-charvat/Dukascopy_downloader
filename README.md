@@ -65,6 +65,29 @@ Hlavní skupiny: `FX` (`FX_MAJORS`, `FX_CROSSES`, `FX_METALS`), `CMD` (`CMD_ENER
 `CMD_METALS`, `CMD_AGRICULTURAL`), `IDX` (`IDX_AMERICA`, `IDX_EUROPE`, `IDX_ASIA`),
 `BND_CFD`, `STCK_CFD`, `ETF_CFD`, `VCCY` (krypto).
 
+## Struktura složky s daty
+
+Nahoře timeframe, pod ním kategorie a podkategorie, pak symbol:
+
+```
+data/
+  m1/Forex/Majors/EUR-USD/BID/2024-01.parquet             (1 soubor na měsíc)
+  m1/Commodities/Energy/LIGHT.CMD-USD/BID/...
+  h1/Indices/America/USA500.IDX-USD/BID/2024.parquet      (1 soubor na rok)
+  d1/Stocks/US/NVDA.US-USD/BID/all.parquet                (1 soubor)
+  d1/Crypto/BTC-USD/BID/all.parquet
+  tick/Forex/Metals/XAU-USD/2024-01-02.parquet            (1 soubor na den, bid+ask)
+  _meta/, _logs/
+```
+
+Kategorie: `Forex` (`Majors`, `Crosses`, `Metals`), `Commodities` (`Energy`, `Metals`,
+`Agricultural`), `Indices` (`America`, `Europe`, `Asia_Pacific`, `Africa`), `Bonds`,
+`Stocks/<země>`, `ETF/<země>`, `Crypto`.
+
+Data uložená ve starším rozložení (`m1/EUR-USD/...` nebo `m1/FX/FX_MAJORS/...`) se přesunou samy při
+dalším `download` nebo `update`. `load()`, `export` a `status` najdou data v obou
+rozloženích.
+
 ## Použití v Pythonu (backtesty)
 
 ```python
