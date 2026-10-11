@@ -1,0 +1,17 @@
+# downloaded data
+data/
+*.parquet
+*.csv.gz
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+# IDE (keep shared project files)
+.idea/workspace.xml
+.idea/shelf/
+# local run logs
+*_log.txt
