@@ -10,8 +10,7 @@ build/
 dist/
 .venv/
 venv/
-# IDE (keep shared project files)
-.idea/workspace.xml
-.idea/shelf/
 # local run logs
 *_log.txt
+# IDE
+.idea/

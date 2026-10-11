@@ -1,127 +1,201 @@
-# Dukascopy downloader
+# Dukascopy Downloader
 
-Robustní stahovač historických dat z Dukascopy (API `https://jetta.dukascopy.com`) –
-ticky, 1min, 1h a denní svíčky (BID/ASK) pro všech ~1500 instrumentů (forex, kovy,
-komodity, indexy, dluhopisy, akcie, ETF, krypto).
+Download free historical market data from [Dukascopy](https://www.dukascopy.com/) — forex,
+metals, commodities, indices, bonds, stocks, ETFs and crypto (~1,500 instruments) — and save
+it as clean Parquet files ready for backtesting.
 
-* **Navazuje, kde skončil** – každý stažený kus se zapíše do `_manifest.json`, opakované
-  spuštění stáhne jen to, co chybí (přerušení přes Ctrl+C nevadí).
-* **Robustní síť** – retry s exponenciálním backoffem, respektuje `Retry-After`,
-  při 429/403 automaticky zpomalí, validuje každou odpověď (délky polí, časy v rozsahu),
-  atomický zápis souborů.
-* **Paralelní** – 6 vláken, limit 8 req/s (server nad ~10 req/s vrací 429; při 429 se rychlost sama sníží).
-* **Úložiště** – Parquet (UTC), 1 soubor na měsíc (m1) / rok (h1) / den (tick).
-* **Aktuální data** – API vydává jen uzavřená období (minuty do včerejška, hodiny do
-  konce minulého měsíce…). Rozběhnutý měsíc u `h1` a rok u `d1` se proto dopočítá
-  z menších timeframů a po uzavření nahradí oficiálními daty.
+- **Timeframes:** ticks, 1-minute, 1-hour and daily candles (BID and/or ASK)
+- **Resumable:** stop any time with Ctrl+C; the next run continues where it left off
+- **Safe for the server:** rate limited, slows down automatically when throttled, retries failed requests
+- **Organised:** files are sorted into folders by timeframe and category (`m1/Forex/Majors/EUR-USD/...`)
+- **Easy to use:** one command to download, one to update, one to export to CSV/Parquet
 
-## Instalace
+## Installation
+
+You need **Python 3.9 or newer**. Install straight from GitHub:
 
 ```bash
-conda activate dukascopy-dowloader      # nebo jiný env / venv
-pip install -r requirements.txt
-pip install -e .                        # volitelné: přidá příkaz `duka`
+pip install git+https://github.com/tomas-charvat/Dukascopy_downloader.git
 ```
 
-Bez instalace jde všechno spouštět i jako `python duka.py ...`.
-
-## Příkazy
+This gives you the `duka` command. Check that it works:
 
 ```bash
-duka groups                                   # kategorie a počty instrumentů
-duka instruments --group FX_MAJORS            # instrumenty ve skupině
-duka instruments --search gold                # hledání
-duka info EURUSD XAUUSD                       # detail + odkdy je historie
+duka --version
+```
 
-# stahování (symboly lze psát EURUSD / EUR/USD / EUR-USD / eurusd)
-duka download EURUSD                          # celá 1min historie BID
-duka download EURUSD GBPUSD XAUUSD --from 2014 --side both
-duka download --group FX_MAJORS --from 2014   # celá skupina
-duka download --group FX_CROSSES --group FX_METALS --from 2014
-duka download USA500.IDX DEU.IDX LIGHT.CMD BTCUSD --from 2015
-duka download EURUSD --tf h1                  # hodinové od roku 2003
-duka download EURUSD --tf d1                  # denní (od 1973)
-duka download EURUSD --tf tick --from 2024-03-01 --to 2024-03-31
+> **Tip:** if you only want the command-line tool, [pipx](https://pipx.pypa.io/) or
+> [uv](https://docs.astral.sh/uv/) installs it into its own isolated environment:
+> `pipx install git+https://github.com/tomas-charvat/Dukascopy_downloader.git`
+> or `uv tool install git+https://github.com/tomas-charvat/Dukascopy_downloader.git`
 
-duka update                                   # dotáhne všechno stažené do dneška
-duka update EURUSD --tf m1
-duka status                                   # co je staženo (řádky, rozsah, MB)
+To update to the latest version later:
 
-# export (CSV / CSV.GZ / Parquet), přepočet timeframu, časová zóna, MID cena
+```bash
+pip install --upgrade git+https://github.com/tomas-charvat/Dukascopy_downloader.git
+```
+
+## Quick start
+
+```bash
+# 1. Find the instrument you want
+duka instruments --search gold
+
+# 2. Download 1-minute candles since 2020 (saved into ./data)
+duka download EURUSD XAUUSD BTCUSD --from 2020
+
+# 3. Later: fetch only what's new
+duka update
+
+# 4. Export to a single CSV file (here resampled to 15-minute candles)
+duka export EURUSD --from 2020 --resample 15min -o eurusd_15m.csv
+```
+
+Symbols can be written as `EURUSD`, `eurusd`, `EUR/USD` or `EUR-USD`.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `duka groups` | List instrument categories (`FX_MAJORS`, `CMD_ENERGY`, `VCCY`, ...) |
+| `duka instruments` | List or search instruments (`--search gold`, `--group FX_MAJORS`) |
+| `duka info EURUSD` | Instrument details and how far back its history goes |
+| `duka download ...` | Download data (see options below) |
+| `duka update` | Bring everything you've already downloaded up to date |
+| `duka status` | Show what's downloaded: rows, date range, size |
+| `duka export ...` | Write one symbol to a single CSV / CSV.GZ / Parquet file |
+| `duka selftest` | Live check: downloads a little data for 2 symbols from every category |
+
+Run `duka <command> --help` for all options.
+
+### Downloading
+
+```bash
+duka download EURUSD                                # full 1-minute history (BID)
+duka download EURUSD GBPUSD --from 2015 --side both # BID and ASK since 2015
+duka download --group FX_MAJORS --from 2018         # a whole category
+duka download EURUSD --tf h1                        # hourly candles
+duka download EURUSD --tf d1                        # daily candles
+duka download BTCUSD --tf tick --from 2024-03-01 --to 2024-03-31
+```
+
+| Option | Meaning | Default |
+|---|---|---|
+| `--tf` | `tick`, `m1`, `h1` or `d1` | `m1` |
+| `--from` / `--to` | `2020`, `2020-05` or `2020-05-01` (`--to` is inclusive) | whole history / now |
+| `--side` | `BID`, `ASK` or `BOTH` | `BID` |
+| `--group` | download every instrument in a category (repeatable) | |
+| `--data-dir` | where to store the data (or set `DUKA_DATA_DIR`) | `./data` |
+| `--rate` | max requests per second | `8` |
+| `--force` | download again even if already stored | |
+
+> **How long does it take?** One request = one day of 1-minute data, so ~5 years of
+> `m1` for one symbol is ~1,800 requests ≈ 4–8 minutes. Tick data is one request per
+> hour and is much slower — download it for short periods only.
+
+### Exporting
+
+```bash
 duka export EURUSD --from 2020 --to 2024 -o eurusd_m1.csv
-duka export EURUSD --resample 15min --tz Europe/Prague -o eurusd_m15.csv
-duka export XAUUSD --side mid --resample 4h -o xau_h4.parquet
-duka export EURUSD --tf tick --from 2024-03-01 --to 2024-03-01 --resample 10s -o eurusd_10s.csv
-
-duka selftest                                 # živý test: 2 symboly z každé kategorie
-duka selftest EURUSD BTCUSD                   # test jen vybraných symbolů
+duka export EURUSD --resample 1h --tz Europe/London -o eurusd_h1.parquet
+duka export XAUUSD --side mid --resample 4h -o xauusd_h4.csv
 ```
 
-Užitečné volby: `--data-dir D:\duka_data` (nebo proměnná `DUKA_DATA_DIR`),
-`-w/--workers`, `--rate`, `--retries`, `--force` (stáhnout znovu), `-v` (víc logů).
-Log se ukládá do `data/_logs/duka.log`.
+`--resample` accepts any pandas rule (`5min`, `15min`, `1h`, `4h`, `1D`, ...),
+`--side` can also be `MID` (average of bid and ask) or `BOTH`, and `--drop-flat` removes
+zero-volume candles.
 
-Hlavní skupiny: `FX` (`FX_MAJORS`, `FX_CROSSES`, `FX_METALS`), `CMD` (`CMD_ENERGY`,
-`CMD_METALS`, `CMD_AGRICULTURAL`), `IDX` (`IDX_AMERICA`, `IDX_EUROPE`, `IDX_ASIA`),
-`BND_CFD`, `STCK_CFD`, `ETF_CFD`, `VCCY` (krypto).
+## Where the data goes
 
-## Struktura složky s daty
-
-Nahoře timeframe, pod ním kategorie a podkategorie, pak symbol:
+Everything is stored under `./data` (change with `--data-dir`), sorted by timeframe,
+then category, then symbol:
 
 ```
 data/
-  m1/Forex/Majors/EUR-USD/BID/2024-01.parquet             (1 soubor na měsíc)
-  m1/Commodities/Energy/LIGHT.CMD-USD/BID/...
-  h1/Indices/America/USA500.IDX-USD/BID/2024.parquet      (1 soubor na rok)
-  d1/Stocks/US/NVDA.US-USD/BID/all.parquet                (1 soubor)
-  d1/Crypto/BTC-USD/BID/all.parquet
-  tick/Forex/Metals/XAU-USD/2024-01-02.parquet            (1 soubor na den, bid+ask)
-  _meta/, _logs/
+├── m1/
+│   ├── Forex/Majors/EUR-USD/BID/2024-01.parquet    one file per month
+│   ├── Commodities/Energy/LIGHT.CMD-USD/BID/...
+│   └── Crypto/BTC-USD/BID/...
+├── h1/Indices/America/USA500.IDX-USD/BID/2024.parquet    one file per year
+├── d1/Stocks/US/NVDA.US-USD/BID/all.parquet              one file
+├── tick/Forex/Metals/XAU-USD/2024-01-02.parquet          one file per day
+├── _meta/    instrument list cache
+└── _logs/    duka.log
 ```
 
-Kategorie: `Forex` (`Majors`, `Crosses`, `Metals`), `Commodities` (`Energy`, `Metals`,
+Categories: `Forex` (`Majors`, `Crosses`, `Metals`), `Commodities` (`Energy`, `Metals`,
 `Agricultural`), `Indices` (`America`, `Europe`, `Asia_Pacific`, `Africa`), `Bonds`,
-`Stocks/<země>`, `ETF/<země>`, `Crypto`.
+`Stocks/<country>`, `ETF/<country>`, `Crypto`.
 
-Data uložená ve starším rozložení (`m1/EUR-USD/...` nebo `m1/FX/FX_MAJORS/...`) se přesunou samy při
-dalším `download` nebo `update`. `load()`, `export` a `status` najdou data v obou
-rozloženích.
+All times are **UTC**. The `_manifest.json` files record what's been downloaded — don't
+delete them unless you want to download everything again.
 
-## Použití v Pythonu (backtesty)
+## Using it from Python
 
 ```python
 from dukascopy_downloader import Downloader, load
 
+# download
 dl = Downloader("data")
-dl.download(["EURUSD", "XAUUSD"], tf="m1", start="2015-01-01", sides="both")
+dl.download(["EURUSD", "XAUUSD"], tf="m1", start="2020-01-01", sides="both")
 
-df = load("data", "EUR-USD", "m1", start="2020", end="2024", side="BID")
-m15 = load("data", "EUR-USD", "m1", side="MID", resample="15min", tz="Europe/Prague")
+# load stored data as a pandas DataFrame (works offline)
+df = load("data", "EUR-USD", "m1", start="2020", end="2024")
+h1 = load("data", "EUR-USD", "m1", side="MID", resample="1h", tz="Europe/London")
 ```
 
-Sloupce: `time` (UTC, tz-aware), `open, high, low, close, volume`; ticky:
-`time, bid, ask, bid_volume, ask_volume`. Dukascopy u starších dat vyplňuje neaktivní
-minuty plochými svíčkami s nulovým objemem – lze je zahodit `drop_flat=True` /
-`--drop-flat`.
+`load()` takes the Dukascopy code with a dash (`EUR-USD`, `XAU-USD`, `BTC-USD`); use
+`dl.load("EURUSD", ...)` if you want symbol names resolved for you.
 
-## Formát API (pro údržbu)
+You can also read the files with plain pandas: `pd.read_parquet("data/m1/Forex/Majors/EUR-USD/BID")`.
 
-| timeframe | endpoint | 1 request = |
-|---|---|---|
-| tick | `/v1/ticks/{CODE}/{Y}/{M}/{D}/{H}` | 1 hodina |
-| m1 | `/v1/candles/minute/{CODE}/{BID\|ASK}/{Y}/{M}/{D}` | 1 den |
-| h1 | `/v1/candles/hour/{CODE}/{BID\|ASK}/{Y}/{M}` | 1 měsíc |
-| d1 | `/v1/candles/day/{CODE}/{BID\|ASK}/{Y}` | 1 rok |
+**Columns**
 
-Seznam instrumentů `/v1/instruments`, detail `/v1/instruments/{CODE}`. Hodnoty jsou
-delta‑kódované: `time = timestamp + cumsum(times) * shift`,
-`open = (round(open/multiplier) + cumsum(opens)) * multiplier` (stejně high/low/close,
-u ticků bid/ask), objemy jsou přímo. Neuzavřené období vrací `400 From time is too late`.
+- candles: `time, open, high, low, close, volume`
+- ticks: `time, bid, ask, bid_volume, ask_volume`
 
-## Testy
+`time` is a timezone-aware UTC timestamp. For older periods Dukascopy fills inactive
+minutes with flat zero-volume candles; drop them with `drop_flat=True` / `--drop-flat`.
+
+## Good to know
+
+- **Latest data:** Dukascopy publishes only finished periods. The current month (`h1`)
+  and year (`d1`) are built from smaller timeframes and replaced with official data once
+  the period closes. Run `duka update` whenever you want fresh data.
+- **Rate limits:** the server starts refusing requests at around 10 per second. The default
+  of 8/s is safe; if you see `Server is throttling` messages, lower it with `--rate 5`.
+- **Logs:** details of every run are written to `data/_logs/duka.log`.
+
+## Development
 
 ```bash
-python -m unittest discover -s tests -v      # offline testy (bez sítě)
-duka selftest                                # živý test proti API
+git clone https://github.com/tomas-charvat/Dukascopy_downloader.git
+cd Dukascopy_downloader
+pip install -e .
+python -m unittest discover -s tests -v   # offline tests, no network needed
+duka selftest                             # live test against the Dukascopy API
 ```
+
+<details>
+<summary>API notes (for maintainers)</summary>
+
+Data comes from `https://jetta.dukascopy.com`:
+
+| timeframe | endpoint | one request = |
+|---|---|---|
+| tick | `/v1/ticks/{CODE}/{Y}/{M}/{D}/{H}` | 1 hour |
+| m1 | `/v1/candles/minute/{CODE}/{BID\|ASK}/{Y}/{M}/{D}` | 1 day |
+| h1 | `/v1/candles/hour/{CODE}/{BID\|ASK}/{Y}/{M}` | 1 month |
+| d1 | `/v1/candles/day/{CODE}/{BID\|ASK}/{Y}` | 1 year |
+
+Instrument list: `/v1/instruments`, details: `/v1/instruments/{CODE}`. Values are
+delta-encoded: `time = timestamp + cumsum(times) * shift`,
+`open = (round(open / multiplier) + cumsum(opens)) * multiplier` (same for high/low/close
+and tick bid/ask); volumes are plain. A period that hasn't closed yet returns
+`400 From time is too late`.
+</details>
+
+## Disclaimer
+
+This project is not affiliated with Dukascopy Bank SA. Data is provided by Dukascopy
+under their terms of use; please use it responsibly.

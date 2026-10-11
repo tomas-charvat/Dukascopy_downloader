@@ -4,14 +4,30 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dukascopy-downloader"
-version = "1.0.0"
-description = "Robust downloader for Dukascopy historical data (jetta.dukascopy.com API)"
+version = "1.1.0"
+description = "Download Dukascopy historical market data (ticks, 1-minute, hourly and daily candles) into Parquet files"
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = ["requests>=2.25", "pandas>=1.5", "numpy>=1.21", "pyarrow>=10"]
+authors = [{ name = "Tomas Charvat" }]
+keywords = ["dukascopy", "forex", "historical data", "market data", "ohlc", "tick data", "backtesting", "parquet"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+    "requests>=2.25",
+    "pandas>=1.5",
+    "numpy>=1.21",
+    "pyarrow>=10",
+    "tqdm>=4.60",
+]
 
-[project.optional-dependencies]
-progress = ["tqdm"]
+[project.urls]
+Homepage = "https://github.com/tomas-charvat/Dukascopy_downloader"
+Issues = "https://github.com/tomas-charvat/Dukascopy_downloader/issues"
 
 [project.scripts]
 duka = "dukascopy_downloader.cli:main"

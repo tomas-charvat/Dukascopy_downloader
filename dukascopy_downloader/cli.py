@@ -1,4 +1,4 @@
-"""Command line interface:  duka <command> ...   (or: python duka.py <command> ...)"""
+"""Command line interface:  duka <command> ...   (or: python -m dukascopy_downloader <command> ...)"""
 from __future__ import annotations
 
 import argparse
