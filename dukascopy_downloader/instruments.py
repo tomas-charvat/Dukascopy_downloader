@@ -37,7 +37,43 @@ FOLDER_NAMES = {
     "STCK_CFD": "Stocks",
     "ETF_CFD": "ETF",
     "VCCY": "Crypto",
+    "OTHERS": "Others",
 }
+
+# Instruments the API puts in no group are placed into these extra groups,
+# chosen by the API's platformGroupId (negative ids never clash with API ids).
+OTHERS_GROUPS = [
+    {"id": -1, "code": "OTHERS", "description": "Others (no group in the API)", "parentId": None, "sortOrder": 100},
+    {"id": -2, "code": "OTHERS_FUNDS", "description": "Funds", "parentId": -1, "sortOrder": 1},
+    {"id": -3, "code": "OTHERS_ETF", "description": "ETF", "parentId": -1, "sortOrder": 2},
+    {"id": -4, "code": "OTHERS_CRYPTO", "description": "Crypto", "parentId": -1, "sortOrder": 3},
+    {"id": -5, "code": "OTHERS_MISC", "description": "Misc", "parentId": -1, "sortOrder": 4},
+]
+
+
+def _others_group_id(inst: dict) -> int:
+    pg = str(inst.get("platformGroupId") or "").upper()
+    desc = str(inst.get("description") or "").upper()
+    if pg in ("MUTUAL_FUNDS", "MONEY_MRKT"):
+        return -2
+    if pg == "ETF" or (pg == "STK_CASH" and ("ETF" in desc or "UCITS" in desc)):
+        return -3
+    if pg.startswith("CRYPTO"):
+        return -4
+    return -5
+
+
+def _add_others(catalogue: dict) -> dict:
+    """Put instruments without a known group into the OTHERS groups (in memory only)."""
+    groups = catalogue.setdefault("groups", [])
+    if any(g.get("code") == "OTHERS" for g in groups):
+        return catalogue
+    known = {g["id"] for g in groups}
+    for inst in catalogue.get("instruments", []):
+        if inst.get("groupId") not in known:
+            inst["groupId"] = _others_group_id(inst)
+    groups.extend(dict(g) for g in OTHERS_GROUPS)
+    return catalogue
 
 
 def _norm(s: str) -> str:
@@ -75,7 +111,7 @@ class Instruments:
 
     def load(self, refresh: bool = False) -> dict:
         if self._list is None or refresh:
-            self._list = self._cached(self.cache_dir / "instruments.json", self.LIST_PATH, refresh)
+            self._list = _add_others(self._cached(self.cache_dir / "instruments.json", self.LIST_PATH, refresh))
         return self._list
 
     @property
@@ -128,7 +164,7 @@ class Instruments:
             path.append(name or str(g["code"]))
             gid = by_id[gid].get("parentId")
         if not path:
-            path = ["Other"]
+            path = ["Others", "Misc"]
         return "/".join(reversed(path))
 
     def _group_ids(self, group: str) -> set:

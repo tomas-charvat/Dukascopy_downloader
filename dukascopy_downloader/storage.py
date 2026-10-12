@@ -116,10 +116,10 @@ class Store:
         try:
             cat = self.category_of(code) or ""
         except Exception as e:  # noqa: BLE001 - unknown code / offline catalogue
-            log.warning("no category for %s (%s), using Other", code, e)
+            log.warning("no category for %s (%s), using Others", code, e)
             cat = ""
         parts = [re.sub(r"[^A-Za-z0-9._-]+", "_", x).strip("_") for x in cat.split("/")]
-        parts = [x for x in parts if x] or ["Other"]
+        parts = [x for x in parts if x] or ["Others"]
         return self.root.joinpath(tf, *parts)
 
     def code_dir(self, tf: str, code: str) -> Path:

@@ -125,12 +125,50 @@ data/
 └── _logs/    duka.log
 ```
 
-Categories: `Forex` (`Majors`, `Crosses`, `Metals`), `Commodities` (`Energy`, `Metals`,
-`Agricultural`), `Indices` (`America`, `Europe`, `Asia_Pacific`, `Africa`), `Bonds`,
-`Stocks/<country>`, `ETF/<country>`, `Crypto`.
+The categories are listed in [Instrument groups](#instrument-groups) below.
 
 All times are **UTC**. The `_manifest.json` files record what's been downloaded — don't
 delete them unless you want to download everything again.
+
+## Instrument groups
+
+Every instrument belongs to one category and (mostly) one subgroup. Use the code in
+`--group` to list or download a whole group; the folder column shows where its data is saved.
+Counts are from October 2026 — run `duka groups` for the current list.
+
+| Category | `--group` | Subgroup | `--group` | Folder | Instruments |
+|---|---|---|---|---|---:|
+| **Forex** | `FX` | Majors | `FX_MAJORS` | `Forex/Majors/` | 7 |
+| | | Crosses | `FX_CROSSES` | `Forex/Crosses/` | 290 |
+| | | Metals (gold, silver, ...) | `FX_METALS` | `Forex/Metals/` | 51 |
+| **Commodities** | `CMD` | Energy | `CMD_ENERGY` | `Commodities/Energy/` | 4 |
+| | | Metals | `CMD_METALS` | `Commodities/Metals/` | 3 |
+| | | Agricultural | `CMD_AGRICULTURAL` | `Commodities/Agricultural/` | 6 |
+| **Indices** | `IDX` | America | `IDX_AMERICA` | `Indices/America/` | 6 |
+| | | Europe | `IDX_EUROPE` | `Indices/Europe/` | 9 |
+| | | Asia / Pacific | `IDX_ASIA` | `Indices/Asia_Pacific/` | 5 |
+| | | Africa | `IDX_AFRICA` | `Indices/Africa/` | 1 |
+| **Bonds** | `BND_CFD` | — | | `Bonds/` | 3 |
+| **Stocks** | `STCK_CFD` | one subgroup per country (see below) | country name | `Stocks/<Country>/` | 987 |
+| **ETF** | `ETF_CFD` | US | `ETF_CFD_US` | `ETF/US/` | 60 |
+| | | Hong Kong | `ETF_CFD_HK` | `ETF/Hong_Kong/` | 4 |
+| | | France | `ETF_CFD_FR` | `ETF/France/` | 3 |
+| | | Germany | `ETF_CFD_DE` | `ETF/Germany/` | 1 |
+| | | no country | | `ETF/` | 17 |
+| **Crypto** | `VCCY` | — | | `Crypto/` | 30 |
+| **Others** | `OTHERS` | Funds (money market) | `OTHERS_FUNDS` | `Others/Funds/` | 9 |
+| | | ETF (London-listed) | `OTHERS_ETF` | `Others/ETF/` | 5 |
+| | | Crypto (stablecoins) | `OTHERS_CRYPTO` | `Others/Crypto/` | 3 |
+| | | anything else | `OTHERS_MISC` | `Others/Misc/` | 0 |
+| | | | | **Total** | **1,504** |
+
+**Stocks by country** (`--group US`, `--group Germany`, `--group "Hong Kong"`, ...):
+US 546 · UK 102 · Japan 53 · Germany 43 · France 38 · Italy 38 · Mexico 28 ·
+Hong Kong 26 · Switzerland 25 · Spain 19 · Sweden 18 · Netherlands 15 · Denmark 8 ·
+Belgium 7 · Finland 7 · Norway 5 · Ireland 4 · Austria 3 · Portugal 2
+
+`Others` is not a Dukascopy category: it collects the few instruments the API lists
+without any group, sorted by their instrument type.
 
 ## Using it from Python
 

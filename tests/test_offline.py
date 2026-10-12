@@ -222,6 +222,30 @@ class TestDownloader(unittest.TestCase):
         self.assertEqual(self.dl.resolve_symbols(["eurusd,xauusd"]), ["EUR-USD", "XAU-USD"])
 
 
+class TestOthersGroups(unittest.TestCase):
+    def test_ungrouped_instruments_go_to_others(self):
+        from dukascopy_downloader.instruments import _add_others
+        cat = _add_others({"groups": [{"id": 9, "code": "VCCY", "parentId": None, "description": "Crypto CFD"}],
+                           "instruments": [
+            {"code": "BTC-USD", "groupId": 9},
+            {"code": "IE00B40G6S53.FN-GBP", "groupId": None, "platformGroupId": "MUTUAL_FUNDS"},
+            {"code": "SEMI.GB-USD", "groupId": None, "platformGroupId": "STK_CASH",
+             "description": "iShares MSCI Global Semiconductors UCITS ETF"},
+            {"code": "USC-USD", "groupId": None, "platformGroupId": "CRYPTO_CURR"},
+            {"code": "XYZ-USD", "groupId": 12345, "platformGroupId": "FUTURES"},
+        ]})
+        inst = Instruments(None, tempfile.gettempdir())
+        inst._list = cat
+        self.assertEqual(inst.category_path("BTC-USD"), "Crypto")
+        self.assertEqual(inst.category_path("IE00B40G6S53.FN-GBP"), "Others/Funds")
+        self.assertEqual(inst.category_path("SEMI.GB-USD"), "Others/ETF")
+        self.assertEqual(inst.category_path("USC-USD"), "Others/Crypto")
+        self.assertEqual(inst.category_path("XYZ-USD"), "Others/Misc")
+        self.assertEqual(len(inst.in_group("OTHERS")), 4)
+        self.assertEqual(_add_others(cat), cat)  # idempotent
+        self.assertEqual(sum(g["code"] == "OTHERS" for g in cat["groups"]), 1)
+
+
 class TestClientRetries(unittest.TestCase):
     def test_retry_then_success(self):
         import requests
