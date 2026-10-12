@@ -55,6 +55,79 @@ duka export EURUSD --from 2020 --resample 15min -o eurusd_15m.csv
 
 Symbols can be written as `EURUSD`, `eurusd`, `EUR/USD` or `EUR-USD`.
 
+## Examples: from simple to advanced
+
+### 1. Daily gold prices in a spreadsheet *(beginner)*
+
+Download the whole daily history of gold and save it as a CSV you can open in Excel:
+
+```bash
+duka download XAUUSD --tf d1
+duka export XAUUSD --tf d1 -o gold_daily.csv
+```
+
+### 2. Keep a small dataset up to date *(beginner)*
+
+Download 1-minute data for three symbols once, then refresh it whenever you like:
+
+```bash
+duka download EURUSD XAUUSD BTCUSD --from 2022    # first time: takes a few minutes
+duka status                                       # what you have
+duka update                                       # later: fetches only the new days
+```
+
+### 3. A whole category, your own folder, ready for analysis *(intermediate)*
+
+Download all major forex pairs with BID and ASK into a folder of your choice, then export
+EUR/USD as 15-minute MID candles (with a `spread` column) in Prague time:
+
+```bash
+duka download --group FX_MAJORS --from 2020 --side both --data-dir market-data
+duka export EURUSD --data-dir market-data --side mid --resample 15min --tz Europe/Prague --drop-flat -o exports/eurusd_15m.csv
+```
+
+`--data-dir` can be any path (e.g. `D:\market-data`) and must be the same in every command,
+or set the `DUKA_DATA_DIR` environment variable once. Folders in `-o` are created for you.
+
+### 4. Quick backtest in Python *(advanced)*
+
+Load stored data straight into pandas and test a moving-average crossover:
+
+```python
+from dukascopy_downloader import load
+
+# hourly candles built from the stored 1-minute data
+df = load("data", "EUR-USD", "m1", start="2022", resample="1h", drop_flat=True)
+
+df["fast"] = df["close"].rolling(20).mean()
+df["slow"] = df["close"].rolling(100).mean()
+df["position"] = (df["fast"] > df["slow"]).astype(int).shift(1)   # long when fast > slow
+df["return"] = df["close"].pct_change() * df["position"]
+
+print(f"{len(df)} hourly candles, strategy return: {df['return'].sum():.2%}")
+```
+
+### 5. Automated pipeline: download a group and export every symbol *(advanced)*
+
+A script you can run on a schedule (Task Scheduler, cron): it downloads or updates every
+forex major and writes one Parquet file per symbol with 4-hour MID candles in New York time:
+
+```python
+from pathlib import Path
+from dukascopy_downloader import Downloader
+from dukascopy_downloader.export import export
+
+dl = Downloader("market-data")                     # the folder where data is stored
+
+codes = dl.resolve_symbols(groups=["FX_MAJORS"])   # ['EUR-USD', 'GBP-USD', ...]
+dl.download(codes, tf="m1", start="2020", sides="both")   # only missing days are fetched
+
+for code in codes:
+    n = export(dl.store.root, code, "m1", Path("exports") / f"{code}_4h.parquet",
+               side="MID", resample="4h", tz="America/New_York")
+    print(f"{code}: {n} rows")
+```
+
 ## Commands
 
 | Command | What it does |
@@ -176,13 +249,19 @@ without any group, sorted by their instrument type.
 from dukascopy_downloader import Downloader, load
 
 # download
-dl = Downloader("data")
+dl = Downloader("data")      # the data folder; same as --data-dir, "data" is the default
 dl.download(["EURUSD", "XAUUSD"], tf="m1", start="2020-01-01", sides="both")
 
 # load stored data as a pandas DataFrame (works offline)
 df = load("data", "EUR-USD", "m1", start="2020", end="2024")
 h1 = load("data", "EUR-USD", "m1", side="MID", resample="1h", tz="Europe/London")
 ```
+
+**Why is the folder given to `Downloader(...)` and not to `download()`?** A `Downloader` is
+tied to one data folder: it keeps the instrument cache, the download records
+(`_manifest.json`) and the files there, and `download()`, `update()` and `load()` all work
+with that same folder. `Downloader()` with no argument uses `./data`. For a second folder,
+create a second object: `crypto = Downloader("D:/crypto-data")`.
 
 `load()` takes the Dukascopy code with a dash (`EUR-USD`, `XAU-USD`, `BTC-USD`); use
 `dl.load("EURUSD", ...)` if you want symbol names resolved for you.
