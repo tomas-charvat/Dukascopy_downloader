@@ -17,10 +17,10 @@ jobs:
           python-version: "3.13"
       - name: Check version matches the release tag
         run: |
-          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          version=$(python -c "import ast; print(next(n.value.value for n in ast.parse(open('dukascopy_downloader/__init__.py').read()).body if isinstance(n, ast.Assign) and n.targets[0].id == '__version__'))")
           tag="${GITHUB_REF_NAME#v}"
           if [ "$version" != "$tag" ]; then
-            echo "pyproject.toml version ($version) does not match release tag ($GITHUB_REF_NAME)"; exit 1
+            echo "__version__ ($version) does not match release tag ($GITHUB_REF_NAME)"; exit 1
           fi
       - name: Build
         run: |

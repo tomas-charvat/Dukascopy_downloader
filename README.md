@@ -295,8 +295,8 @@ python -m unittest discover -s tests -v   # offline tests, no network needed
 duka selftest                             # live test against the Dukascopy API
 ```
 
-**Releasing a new version:** bump `version` in `pyproject.toml` (and `__version__` in
-`dukascopy_downloader/__init__.py`), push, then create a GitHub release with the tag
+**Releasing a new version:** bump `__version__` in `dukascopy_downloader/__init__.py`
+(the only place the version is written), push, then create a GitHub release with the tag
 `v<version>` (e.g. `v1.2.0`). The `publish` workflow builds the package and uploads it to PyPI.
 
 <details>
