@@ -12,7 +12,7 @@ it as clean Parquet files ready for backtesting.
 
 ## Installation
 
-You need **Python 3.9 or newer**. Install straight from GitHub:
+You need **Python 3.10 or newer**. Install straight from GitHub:
 
 ```bash
 pip install git+https://github.com/tomas-charvat/Dukascopy_downloader.git
