@@ -12,10 +12,10 @@ it as clean Parquet files ready for backtesting.
 
 ## Installation
 
-You need **Python 3.10 or newer**. Install straight from GitHub:
+You need **Python 3.10 or newer**. Then:
 
 ```bash
-pip install git+https://github.com/tomas-charvat/Dukascopy_downloader.git
+pip install dukascopy-downloader
 ```
 
 This gives you the `duka` command. Check that it works:
@@ -24,16 +24,18 @@ This gives you the `duka` command. Check that it works:
 duka --version
 ```
 
-> **Tip:** if you only want the command-line tool, [pipx](https://pipx.pypa.io/) or
-> [uv](https://docs.astral.sh/uv/) installs it into its own isolated environment:
-> `pipx install git+https://github.com/tomas-charvat/Dukascopy_downloader.git`
-> or `uv tool install git+https://github.com/tomas-charvat/Dukascopy_downloader.git`
-
 To update to the latest version later:
 
 ```bash
-pip install --upgrade git+https://github.com/tomas-charvat/Dukascopy_downloader.git
+pip install --upgrade dukascopy-downloader
 ```
+
+> **Tip:** if you only want the command-line tool, [pipx](https://pipx.pypa.io/) or
+> [uv](https://docs.astral.sh/uv/) installs it into its own isolated environment:
+> `pipx install dukascopy-downloader` or `uv tool install dukascopy-downloader`.
+>
+> The latest development version can be installed straight from GitHub:
+> `pip install git+https://github.com/tomas-charvat/Dukascopy_downloader.git`
 
 ## Quick start
 
@@ -175,6 +177,10 @@ pip install -e .
 python -m unittest discover -s tests -v   # offline tests, no network needed
 duka selftest                             # live test against the Dukascopy API
 ```
+
+**Releasing a new version:** bump `version` in `pyproject.toml` (and `__version__` in
+`dukascopy_downloader/__init__.py`), push, then create a GitHub release with the tag
+`v<version>` (e.g. `v1.2.0`). The `publish` workflow builds the package and uploads it to PyPI.
 
 <details>
 <summary>API notes (for maintainers)</summary>
