@@ -183,12 +183,19 @@ class Downloader:
         self.now = utcnow  # injectable clock (tests)
 
     # ------------------------------------------------------------------ symbols
-    def resolve_symbols(self, symbols: Iterable[str] = (), groups: Iterable[str] = ()) -> List[str]:
+    def resolve_symbols(self, symbols: Iterable[str] = (), groups: Iterable[str] = (),
+                        all_instruments: bool = False, exclude: Iterable[str] = ()) -> List[str]:
+        """Symbols + whole groups (+ the whole universe with ``all_instruments``) minus ``exclude``.
+
+        ``exclude`` items may be group codes (FX_CROSSES, STCK_CFD, US, ...) or symbols.
+        """
         codes: List[str] = []
         if isinstance(symbols, str):
             symbols = [symbols]
         if isinstance(groups, str):
             groups = [groups]
+        if isinstance(exclude, str):
+            exclude = [exclude]
         for s in symbols or ():
             for part in str(s).replace(",", " ").split():
                 c = self.instruments.resolve(part)
@@ -201,7 +208,21 @@ class Downloader:
             for i in items:
                 if i["code"] not in codes:
                     codes.append(i["code"])
-        return codes
+        if all_instruments:
+            inst = self.instruments
+            ordered = sorted(inst.all, key=lambda i: (inst.category_path(i["code"]), -(i.get("rating") or 0)))
+            for i in ordered:
+                if i["code"] not in codes:
+                    codes.append(i["code"])
+        drop = set()
+        for e in exclude or ():
+            for part in str(e).replace(",", " ").split():
+                items = self.instruments.in_group(part)
+                if items:
+                    drop.update(i["code"] for i in items)
+                else:
+                    drop.add(self.instruments.resolve(part))
+        return [c for c in codes if c not in drop]
 
     # ------------------------------------------------------------------ fetching
     def _fetch(self, code: str, side: Optional[str], job: Job):
@@ -230,6 +251,10 @@ class Downloader:
         t0 = time.monotonic()
         now = self.now()
 
+        if not self.instruments.details(code).get("histories"):
+            log.info("%s: the API publishes no history for this instrument - skipped", code)
+            res.seconds = time.monotonic() - t0
+            return res
         hs = self.instruments.history_start(code, tf)
         start = max(to_utc(_as_dt(start)), hs) if start is not None else hs
         end = min(to_utc(_as_dt(end, True)), now) if end is not None else now
@@ -300,9 +325,10 @@ class Downloader:
 
     def download(self, symbols: Iterable[str] = (), tf: str = "m1", start=None, end=None,
                  sides="BID", groups: Iterable[str] = (), force: bool = False,
-                 on_result=None) -> List[SeriesResult]:
+                 on_result=None, all_instruments: bool = False,
+                 exclude: Iterable[str] = ()) -> List[SeriesResult]:
         tf = normalize_tf(tf)
-        codes = self.resolve_symbols(symbols, groups)
+        codes = self.resolve_symbols(symbols, groups, all_instruments, exclude)
         if not codes:
             raise ValueError("no symbols given")
         side_list: Sequence[Optional[str]] = (None,) if tf == "tick" else normalize_sides(sides)
@@ -313,6 +339,9 @@ class Downloader:
                     r = self.download_series(code, tf, start, end, side, force)
                 except UnknownInstrumentError as e:
                     r = SeriesResult(code, tf, side, errors=[("instrument", str(e))])
+                except Exception as e:  # noqa: BLE001 - one bad instrument must not stop a big batch
+                    log.error("%s %s %s failed: %s", code, tf, side or "", e)
+                    r = SeriesResult(code, tf, side, errors=[("series", str(e))])
                 results.append(r)
                 log.info(r.summary())
                 if on_result:

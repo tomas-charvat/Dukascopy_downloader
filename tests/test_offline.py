@@ -221,6 +221,22 @@ class TestDownloader(unittest.TestCase):
         self.assertEqual([i["code"] for i in inst.in_group("FX")], ["EUR-USD", "XAU-USD"])
         self.assertEqual(self.dl.resolve_symbols(["eurusd,xauusd"]), ["EUR-USD", "XAU-USD"])
 
+    def test_all_and_exclude(self):
+        rs = self.dl.resolve_symbols
+        self.assertEqual(sorted(rs(all_instruments=True)),
+                         ["BTC-EUR", "BTC-USD", "EUR-USD", "USA500.IDX-USD", "XAU-USD"])
+        self.assertEqual(sorted(rs(all_instruments=True, exclude=["VCCY"])),
+                         ["EUR-USD", "USA500.IDX-USD", "XAU-USD"])
+        self.assertEqual(sorted(rs(all_instruments=True, exclude=["FX,usa500"])), ["BTC-EUR", "BTC-USD"])
+        self.assertEqual(rs(groups=["FX"], exclude=["FX_METALS"]), ["EUR-USD"])
+
+    def test_universe_download_survives_bad_instruments(self):
+        res = self.dl.download(tf="d1", start="2023", all_instruments=True)
+        self.assertEqual(len(res), 5)
+        ok = sorted(r.code for r in res if r.ok)
+        self.assertEqual(ok, ["EUR-USD", "XAU-USD"])  # the fake API knows only these two
+        self.assertGreater(len(self.dl.store.read("d1", "XAU-USD", "BID")), 300)
+
 
 class TestOthersGroups(unittest.TestCase):
     def test_ungrouped_instruments_go_to_others(self):

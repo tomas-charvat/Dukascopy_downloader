@@ -149,6 +149,9 @@ Run `duka <command> --help` for all options.
 duka download EURUSD                                # full 1-minute history (BID)
 duka download EURUSD GBPUSD --from 2015 --side both # BID and ASK since 2015
 duka download --group FX_MAJORS --from 2018         # a whole category
+duka download --group FX --from 2015                # all of Forex (majors, crosses, metals)
+duka download --all --tf h1 --from 2020             # every instrument (the whole universe)
+duka download --all --from 2020 -x STCK_CFD -x ETF_CFD   # everything except stocks and ETFs
 duka download EURUSD --tf h1                        # hourly candles
 duka download EURUSD --tf d1                        # daily candles
 duka download BTCUSD --tf tick --from 2024-03-01 --to 2024-03-31
@@ -160,6 +163,8 @@ duka download BTCUSD --tf tick --from 2024-03-01 --to 2024-03-31
 | `--from` / `--to` | `2020`, `2020-05` or `2020-05-01` (`--to` is inclusive) | whole history / now |
 | `--side` | `BID`, `ASK` or `BOTH` | `BID` |
 | `--group` | download every instrument in a category (repeatable) | |
+| `--all` | download every instrument Dukascopy lists (~1,500) | |
+| `--exclude`, `-x` | skip a group or symbol, e.g. `-x STCK_CFD -x FX_CROSSES` (repeatable) | |
 | `--data-dir` | where to store the data (or set `DUKA_DATA_DIR`) | `./data` |
 | `--rate` | max requests per second | `8` |
 | `--force` | download again even if already stored | |
@@ -167,6 +172,12 @@ duka download BTCUSD --tf tick --from 2024-03-01 --to 2024-03-31
 > **How long does it take?** One request = one day of 1-minute data, so ~5 years of
 > `m1` for one symbol is ~1,800 requests ≈ 4–8 minutes. Tick data is one request per
 > hour and is much slower — download it for short periods only.
+>
+> `--all` in 1-minute data is millions of requests (weeks), so combine it with `--from`
+> and `--exclude`, or start with `--tf d1` (one request per year, roughly an hour for
+> the whole universe) or `--tf h1` (one request per month, a few hours since 2020).
+> Instruments without published history are skipped, and a failing instrument doesn't
+> stop the rest — rerun the command to retry.
 
 ### Exporting
 

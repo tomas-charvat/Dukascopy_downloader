@@ -19,6 +19,9 @@ EPILOG = """examples:
   duka info EURUSD
   duka download EURUSD XAUUSD --from 2015 --side both
   duka download --group FX_MAJORS --tf m1 --from 2014-01-01
+  duka download --group FX --from 2015                  # all of Forex
+  duka download --all --tf h1 --from 2020               # the whole universe
+  duka download --all --from 2020 -x STCK_CFD -x ETF_CFD
   duka download BTCUSD --tf tick --from 2024-03-01 --to 2024-03-01
   duka update
   duka status
@@ -127,11 +130,17 @@ def cmd_download(a) -> int:
         return 2
     start = parse_date(a.start) if a.start else None
     end = parse_date(a.end, end=True) if a.end else None
-    codes = d.resolve_symbols(a.symbols, a.group)
+    codes = d.resolve_symbols(a.symbols, a.group, a.all, a.exclude)
+    if not codes:
+        print("No instruments left to download (check --exclude).", file=sys.stderr)
+        return 2
     s_txt = f"{start:%Y-%m-%d}" if start else "start of history"
     e_txt = f"{end:%Y-%m-%d %H:%M} (excl.)" if end else "now"
     print(f"Downloading {len(codes)} symbol(s)  tf={tf}  side={a.side.upper()}  {s_txt} -> {e_txt}  "
           f"into {Path(a.data_dir).resolve()} [{d.store.fmt}]", flush=True)
+    if a.all and tf == "m1" and not start:
+        print("Note: the whole 1-minute history of every instrument is several million requests "
+              "(weeks at the default rate). Consider --from, --group or --exclude.", flush=True)
     results = d.download(codes, tf, start, end, a.side, force=a.force,
                          on_result=lambda r: print(r.summary(), flush=True))
     return _print_results(results)
@@ -216,6 +225,9 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("download", aliases=["dl"], parents=[common], help="download data (resumable)")
     s.add_argument("symbols", nargs="*", help="e.g. EURUSD XAUUSD USA500.IDX BTCUSD")
     s.add_argument("--group", "-g", action="append", default=[], help="download a whole group (repeatable)")
+    s.add_argument("--all", action="store_true", help="download every instrument (the whole universe)")
+    s.add_argument("--exclude", "-x", action="append", default=[],
+                   help="skip a group or symbol, e.g. -x STCK_CFD -x FX_CROSSES (repeatable)")
     s.add_argument("--tf", "-t", default="m1", help="tick | m1 | h1 | d1 (default m1)")
     s.add_argument("--from", dest="start", help="YYYY | YYYY-MM | YYYY-MM-DD (default: start of history)")
     s.add_argument("--to", dest="end", help="inclusive end date (default: now)")
@@ -256,8 +268,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     p = build_parser()
     a = p.parse_args(argv)
-    if a.cmd in ("download", "dl") and not a.symbols and not a.group:
-        p.error("give symbols or --group")
+    if a.cmd in ("download", "dl") and not a.symbols and not a.group and not a.all:
+        p.error("give symbols, --group or --all")
     _setup_logging(a.data_dir, a.verbose)
     try:
         return a.func(a)
